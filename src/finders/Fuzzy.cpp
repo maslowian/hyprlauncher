@@ -116,7 +116,7 @@ static float tokenBestMatch(std::string_view qt, std::string_view lastQ, const s
     return (best - MIN_FUZZY_TO_COUNT) / (1.F - MIN_FUZZY_TO_COUNT);
 }
 
-static float scoreCandidate(std::string_view query, std::string_view cand, float freq) {
+static float scoreCandidate(std::string_view query, std::string_view cand, float freq, char tokenBreak) {
     const float popFactor = 1.F + (POPULARITY_FACTOR * std::log1p(std::max(0.F, freq)));
 
     // exact matches occupy a reserved band above any achievable fuzzy score, so a popular
@@ -126,8 +126,8 @@ static float scoreCandidate(std::string_view query, std::string_view cand, float
     if (trim(queryLower) == trim(std::string{cand}))
         return EXACT_MATCH_SCORE + popFactor;
 
-    CVarList2                     qTokens(std::string{query}, 0, 's', true, false);
-    CVarList2                     cTokens(std::string{cand}, 0, 's', true, false);
+    CVarList2                     qTokens(std::string{query}, 0, tokenBreak == ' ' ? 's' : tokenBreak, true, false);
+    CVarList2                     cTokens(std::string{cand}, 0, tokenBreak == ' ' ? 's' : tokenBreak, true, false);
 
     std::vector<std::string_view> qTok, cTok;
     qTok.reserve(qTokens.size());
@@ -188,13 +188,13 @@ struct SScoreData {
     size_t            idx = 0;
 };
 
-static void workerFn(std::vector<SScoreData>& scores, const std::vector<SP<IFinderResult>>& in, const std::string& query, size_t start, size_t end) {
+static void workerFn(std::vector<SScoreData>& scores, const std::vector<SP<IFinderResult>>& in, const std::string& query, size_t start, size_t end, char tokenBreak) {
     for (size_t i = start; i < end; ++i) {
         auto& ref = scores[i];
 
         float bestScore = 0.F;
         for (auto const& candidate : in[i]->fuzzables()) {
-            auto score = scoreCandidate(query, candidate, in[i]->frequency());
+            auto score = scoreCandidate(query, candidate, in[i]->frequency(), tokenBreak);
             bestScore  = std::max(score, bestScore);
         }
         ref.score = bestScore;
@@ -233,7 +233,7 @@ static std::vector<SP<IFinderResult>> getBestResultsStable(std::vector<SScoreDat
 static constexpr const decltype(sysconf(0)) MAX_THREADS = 10;
 
 //
-std::vector<SP<IFinderResult>> Fuzzy::getNResults(const std::vector<SP<IFinderResult>>& in, const std::string& query, size_t results) {
+std::vector<SP<IFinderResult>> Fuzzy::getNResults(const std::vector<SP<IFinderResult>>& in, const std::string& query, size_t results, char tokenBreak) {
     std::vector<SScoreData> scores;
     scores.resize(in.size());
 
@@ -251,10 +251,10 @@ std::vector<SP<IFinderResult>> Fuzzy::getNResults(const std::vector<SP<IFinderRe
         size_t workElDone = 0, workElPerThread = in.size() / THREADS;
         for (long i = 0; i < THREADS; ++i) {
             if (i == THREADS - 1) {
-                workerThreads[i] = std::thread([&, begin = workElDone] { workerFn(scores, in, query, begin, in.size()); });
+                workerThreads[i] = std::thread([&, begin = workElDone] { workerFn(scores, in, query, begin, in.size(), tokenBreak); });
                 break;
             }
-            workerThreads[i] = std::thread([&, begin = workElDone, end = workElDone + workElPerThread] { workerFn(scores, in, query, begin, end); });
+            workerThreads[i] = std::thread([&, begin = workElDone, end = workElDone + workElPerThread] { workerFn(scores, in, query, begin, end, tokenBreak); });
 
             workElDone += workElPerThread;
         }
@@ -266,7 +266,7 @@ std::vector<SP<IFinderResult>> Fuzzy::getNResults(const std::vector<SP<IFinderRe
 
         workerThreads.clear();
     } else
-        workerFn(scores, in, query, 0, in.size());
+        workerFn(scores, in, query, 0, in.size(), tokenBreak);
 
     return getBestResultsStable(scores, results);
 }
