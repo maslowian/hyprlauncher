@@ -36,7 +36,7 @@ CUI::CUI(bool open) : m_openByDefault(open) {
 
     m_inputBox = Hyprtoolkit::CTextboxBuilder::begin()
                      ->placeholder(I18n::localize(I18n::TXT_KEY_SEARCH_SOMETHING, {}))
-                     ->onTextEdited([](SP<Hyprtoolkit::CTextboxElement>, const std::string& query) { g_queryProcessor->scheduleQueryUpdate(query); })
+                     ->onTextEdited([this](SP<Hyprtoolkit::CTextboxElement>, const std::string& query) { scheduleQueryUpdate(query); })
                      ->size({Hyprtoolkit::CDynamicSize::HT_SIZE_PERCENT, Hyprtoolkit::CDynamicSize::HT_SIZE_ABSOLUTE, {1.F, 28.F}})
                      ->multiline(false)
                      ->commence();
@@ -79,6 +79,9 @@ CUI::CUI(bool open) : m_openByDefault(open) {
     m_window->m_rootElement->addChild(m_background);
 
     m_window->m_events.keyboardKey.listenStatic([this](Hyprtoolkit::Input::SKeyboardKeyEvent e) {
+        if (!e.down)
+            return;
+
         if (e.xkbKeysym == XKB_KEY_Escape)
             setWindowOpen(false);
         else if (e.xkbKeysym == XKB_KEY_Down) {
@@ -127,6 +130,7 @@ void CUI::setWindowOpen(bool open) {
     m_open = open;
 
     if (open) {
+        m_activateOnQuery = false;
         m_inputBox->rebuild()->defaultText("")->commence();
 
         updateResults({});
@@ -135,30 +139,45 @@ void CUI::setWindowOpen(bool open) {
 
         m_inputBox->focus();
 
-        g_queryProcessor->scheduleQueryUpdate("");
+        scheduleQueryUpdate("");
     } else {
+        m_queryPending    = false;
+        m_activateOnQuery = false;
         m_window->close();
-        g_queryProcessor->overrideQueryProvider(WP<IFinder>{});
+        g_queryProcessor->overrideQueryProvider(nullptr);
     }
 
     g_serverIPCSocket->sendOpenState(open);
 }
 
 void CUI::onSelected() {
+    if (m_queryPending) {
+        m_activateOnQuery = true;
+        return;
+    }
+
     if (m_currentResults.size() <= m_activeElementId)
         return;
     g_serverIPCSocket->sendSelectionMade(m_currentResults.at(m_activeElementId).result->name());
     m_currentResults.at(m_activeElementId).result->run();
     setWindowOpen(false);
-    g_queryProcessor->overrideQueryProvider(WP<IFinder>{});
+}
+
+void CUI::scheduleQueryUpdate(const std::string& query) {
+    m_queryPending    = true;
+    m_activateOnQuery = false;
+    g_queryProcessor->scheduleQueryUpdate(query);
 }
 
 bool CUI::windowOpen() {
     return m_open;
 }
 
-void CUI::updateResults(std::vector<SFinderResult>&& results) {
-    m_currentResults = std::move(results);
+bool CUI::updateResults(std::vector<SFinderResult>&& results) {
+    const bool ACTIVATE_ON_QUERY = m_activateOnQuery;
+    m_queryPending               = false;
+    m_activateOnQuery            = false;
+    m_currentResults             = std::move(results);
 
     m_activeElementId = 0;
 
@@ -170,6 +189,8 @@ void CUI::updateResults(std::vector<SFinderResult>&& results) {
     }
 
     updateActive();
+
+    return ACTIVATE_ON_QUERY && !m_currentResults.empty();
 }
 
 void CUI::updateActive() {

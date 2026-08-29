@@ -3,6 +3,7 @@
 #include "../IFinder.hpp"
 
 #include <hyprutils/os/FileDescriptor.hpp>
+#include <mutex>
 
 class CIPCEntry;
 
@@ -20,6 +21,7 @@ class CIPCFinder : public IFinder {
   private:
     std::vector<SP<CIPCEntry>>     m_entries;
     std::vector<SP<IFinderResult>> m_entriesGeneric;
+    std::mutex                     m_mutex;
 
     friend class CIPCEntry;
 };

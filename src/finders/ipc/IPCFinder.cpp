@@ -51,6 +51,8 @@ void CIPCFinder::init() {
 }
 
 void CIPCFinder::setData(const std::vector<const char*>& data) {
+    std::lock_guard lock(m_mutex);
+
     m_entries.clear();
     m_entriesGeneric.clear();
     for (const auto& s : data) {
@@ -62,6 +64,8 @@ void CIPCFinder::setData(const std::vector<const char*>& data) {
 }
 
 void CIPCFinder::setData(const std::vector<std::string>& data) {
+    std::lock_guard lock(m_mutex);
+
     m_entries.clear();
     m_entriesGeneric.clear();
     for (const auto& s : data) {
@@ -73,6 +77,7 @@ void CIPCFinder::setData(const std::vector<std::string>& data) {
 }
 
 std::vector<SFinderResult> CIPCFinder::getResultsForQuery(const std::string& query) {
+    std::lock_guard                lock(m_mutex);
     std::vector<SFinderResult>     results;
 
     std::vector<SP<IFinderResult>> fuzzed;

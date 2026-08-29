@@ -7,21 +7,17 @@
 #include "../finders/math/MathFinder.hpp"
 #include "../finders/font/FontFinder.hpp"
 
-#include <hyprutils/utils/ScopeGuard.hpp>
-
-using namespace Hyprutils::Utils;
-
-static WP<IFinder> finderForName(const std::string& x) {
+static IFinder* finderForName(const std::string& x) {
     if (x == "desktop")
-        return g_desktopFinder;
+        return g_desktopFinder.get();
     if (x == "unicode")
-        return g_unicodeFinder;
+        return g_unicodeFinder.get();
     if (x == "math")
-        return g_mathFinder;
-    return WP<IFinder>{};
+        return g_mathFinder.get();
+    return nullptr;
 }
 
-static std::pair<WP<IFinder>, bool> finderForPrefix(const char x) {
+static std::pair<IFinder*, bool> finderForPrefix(const char x) {
     static auto PDEFAULTFINDER = Hyprlang::CSimpleConfigValue<Hyprlang::STRING>(g_configManager->m_config.get(), "finders:default_finder");
 
     static auto PDESKTOPPREFIX = Hyprlang::CSimpleConfigValue<Hyprlang::STRING>(g_configManager->m_config.get(), "finders:desktop_prefix");
@@ -30,112 +26,131 @@ static std::pair<WP<IFinder>, bool> finderForPrefix(const char x) {
     static auto PFONTPREFIX    = Hyprlang::CSimpleConfigValue<Hyprlang::STRING>(g_configManager->m_config.get(), "finders:font_prefix");
 
     if (x == (*PDESKTOPPREFIX)[0])
-        return {g_desktopFinder, true};
+        return {g_desktopFinder.get(), true};
     if (x == (*PUNICODEPREFIX)[0])
-        return {g_unicodeFinder, true};
+        return {g_unicodeFinder.get(), true};
     if (x == (*PMATHPREFIX)[0])
-        return {g_mathFinder, true};
+        return {g_mathFinder.get(), true};
     if (x == (*PFONTPREFIX)[0])
-        return {g_fontFinder, true};
+        return {g_fontFinder.get(), true};
     return {finderForName(*PDEFAULTFINDER), false};
 }
 
 CQueryProcessor::CQueryProcessor() {
     m_queryThread = std::thread([this] {
-        while (!m_quit) {
-            std::unique_lock lk(m_threadMutex);
-            m_threadCV.wait(lk, [this] { return m_event; });
-            m_event = false;
+        while (true) {
+            SQueryRequest request;
 
-            if (m_quit)
-                break;
+            {
+                std::unique_lock lock(m_mutex);
+                m_threadCV.wait(lock, [this] { return m_quit || m_pendingQuery.has_value(); });
 
-            while (!m_quit && m_newQuery) {
-                process();
+                if (m_quit)
+                    return;
+
+                request = std::move(*m_pendingQuery);
+                m_pendingQuery.reset();
             }
+
+            process(std::move(request));
         }
     });
 }
 
 CQueryProcessor::~CQueryProcessor() {
-    m_quit         = true;
-    m_pendingQuery = "exit";
-    m_event        = true;
+    {
+        std::lock_guard lock(m_mutex);
+        m_quit = true;
+        m_pendingQuery.reset();
+    }
+
     m_threadCV.notify_all();
     m_queryThread.join();
 }
 
 void CQueryProcessor::scheduleQueryUpdate(const std::string& str) {
-    m_queryStrMutex.lock();
-    m_pendingQuery = str;
-    m_newQuery     = true;
-    m_event        = true;
-    m_queryStrMutex.unlock();
-    m_threadCV.notify_all();
+    {
+        std::lock_guard lock(m_mutex);
+        m_pendingQuery = SQueryRequest{
+            .query      = str,
+            .finder     = m_overrideFinder,
+            .generation = ++m_generation,
+        };
+    }
+
+    m_threadCV.notify_one();
 }
 
-void CQueryProcessor::overrideQueryProvider(WP<IFinder> finder) {
-    std::lock_guard<std::mutex> lg(m_processingMutex);
+void CQueryProcessor::overrideQueryProvider(IFinder* finder) {
+    std::lock_guard lock(m_mutex);
     m_overrideFinder = finder;
+    m_pendingQuery.reset();
+    ++m_generation;
 }
 
-// Only ran on process thread
-void CQueryProcessor::process() {
-    CScopeGuard x([this] { m_newQuery = false; });
+// Only run on the query thread.
+void CQueryProcessor::process(SQueryRequest&& request) {
+    std::lock_guard processingLock(m_processingMutex);
 
-    if (m_quit)
+    if (!isCurrentGeneration(request.generation))
         return;
 
-    m_queryStrMutex.lock();
+    IFinder*    FINDER = request.finder;
+    std::string query  = std::move(request.query);
+    bool        eat    = false;
 
-    std::string query = m_pendingQuery;
-    m_pendingQuery    = "";
-
-    m_queryStrMutex.unlock();
-
-    WP<IFinder> FINDER;
-    bool        eat = false;
-
-    if (!m_overrideFinder) {
+    if (!FINDER) {
         if (query.empty()) {
             // Only show apps on empty query if configured to do so
             static auto PSHOWONOPEN = Hyprlang::CSimpleConfigValue<Hyprlang::INT>(g_configManager->m_config.get(), "general:show_apps_on_open");
             if (*PSHOWONOPEN) {
                 static auto PDEFAULTFINDER = Hyprlang::CSimpleConfigValue<Hyprlang::STRING>(g_configManager->m_config.get(), "finders:default_finder");
                 FINDER                     = finderForName(*PDEFAULTFINDER);
-                if (FINDER) {
-                    auto RESULTS = FINDER->getResultsForQuery("");
-                    if (g_ui && g_ui->m_backend)
-                        g_ui->m_backend->addIdle([r = std::move(RESULTS)] mutable { g_ui->updateResults(std::move(r)); });
-                } else if (g_ui) {
-                    g_ui->m_backend->addIdle([] mutable { g_ui->updateResults({}); });
-                }
-            } else if (g_ui) {
-                g_ui->m_backend->addIdle([] mutable { g_ui->updateResults({}); });
+            } else {
+                publishResults(request.generation, {});
+                return;
             }
-            return;
-        }
+        } else {
+            const auto [F, e] = finderForPrefix(query[0]);
 
-        const auto [F, e] = finderForPrefix(query[0]);
-
-        if (e && query.size() == 1) {
-            // Prefix typed alone: show all results from that finder
             FINDER = F;
-            if (FINDER) {
-                auto RESULTS = FINDER->getResultsForQuery("");
-                if (g_ui && g_ui->m_backend)
-                    g_ui->m_backend->addIdle([r = std::move(RESULTS)] mutable { g_ui->updateResults(std::move(r)); });
-            }
-            return;
-        }
+            eat    = e;
 
-        FINDER = F;
-        eat    = e;
-    } else
-        FINDER = m_overrideFinder;
+            if (eat && query.size() == 1) {
+                query.clear();
+                eat = false;
+            }
+        }
+    }
 
     auto RESULTS = FINDER ? FINDER->getResultsForQuery(eat ? query.substr(1) : query) : std::vector<SFinderResult>{};
+    publishResults(request.generation, std::move(RESULTS));
+}
 
-    if (g_ui && g_ui->m_backend)
-        g_ui->m_backend->addIdle([r = std::move(RESULTS)] mutable { g_ui->updateResults(std::move(r)); });
+void CQueryProcessor::publishResults(uint64_t generation, std::vector<SFinderResult>&& results) {
+    if (!g_ui || !g_ui->m_backend)
+        return;
+
+    g_ui->m_backend->addIdle([this, generation, results = std::move(results)] mutable {
+        bool activate = false;
+
+        {
+            std::lock_guard processingLock(m_processingMutex);
+
+            if (!isCurrentGeneration(generation) || !g_ui) {
+                results.clear();
+                return;
+            }
+
+            activate = g_ui->updateResults(std::move(results));
+        }
+
+        if (activate && g_ui)
+            g_ui->onSelected();
+    });
+}
+
+bool CQueryProcessor::isCurrentGeneration(uint64_t generation) {
+    std::lock_guard lock(m_mutex);
+    return generation == m_generation;
 }

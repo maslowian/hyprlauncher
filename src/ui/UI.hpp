@@ -28,12 +28,13 @@ class CUI {
     bool windowOpen();
 
     // WARNING: has to be called from within the main thread. NOT thread safe!!
-    void updateResults(std::vector<SFinderResult>&& results);
+    bool updateResults(std::vector<SFinderResult>&& results);
 
     void updateActive();
 
   private:
     void                                  onSelected();
+    void                                  scheduleQueryUpdate(const std::string& query);
 
     SP<Hyprtoolkit::IBackend>             m_backend;
     SP<Hyprtoolkit::IWindow>              m_window;
@@ -50,6 +51,8 @@ class CUI {
 
     bool                                  m_open            = false;
     bool                                  m_openByDefault   = true;
+    bool                                  m_queryPending    = false;
+    bool                                  m_activateOnQuery = false;
     size_t                                m_activeElementId = 0;
 
     friend class CQueryProcessor;

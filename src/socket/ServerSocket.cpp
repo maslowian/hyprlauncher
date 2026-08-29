@@ -64,7 +64,7 @@ void CServerIPCSocket::openWithOptions(const std::vector<const char*>& options) 
         return;
 
     g_ipcFinder->setData(options);
-    g_queryProcessor->overrideQueryProvider(g_ipcFinder);
+    g_queryProcessor->overrideQueryProvider(g_ipcFinder.get());
     g_ui->setWindowOpen(true);
 }
 

@@ -158,7 +158,7 @@ int main(int argc, char** argv, char** envp) {
 
     if (!explicitOptions.empty()) {
         g_ipcFinder->setData(explicitOptions);
-        g_queryProcessor->overrideQueryProvider(g_ipcFinder);
+        g_queryProcessor->overrideQueryProvider(g_ipcFinder.get());
     }
 
     g_configManager = makeUnique<CConfigManager>();
