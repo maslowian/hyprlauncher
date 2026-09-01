@@ -71,6 +71,8 @@ void CServerIPCSocket::openWithOptions(const std::vector<const char*>& options) 
 
 void CServerIPCSocket::selectFinder(const char* finder) {
     g_queryProcessor->selectQueryProvider(finder);
+    if (g_ui->windowOpen())
+        g_ui->scheduleQueryRefresh();
 }
 
 void CServerIPCSocket::sendOpenState(bool open) {
