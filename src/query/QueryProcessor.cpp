@@ -14,6 +14,8 @@ static IFinder* finderForName(const std::string& x) {
         return g_unicodeFinder.get();
     if (x == "math")
         return g_mathFinder.get();
+    if (x == "font")
+        return g_fontFinder.get();
     return nullptr;
 }
 
