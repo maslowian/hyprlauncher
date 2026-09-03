@@ -193,10 +193,11 @@ void CFsFinder::loadPath() {
     static auto PFSSYMLINK = Hyprlang::CSimpleConfigValue<Hyprlang::INT>(g_configManager->m_config.get(), "finders:fs_symlink");
     m_allowSymlink = *PFSSYMLINK;
 
-    for (const auto p : std::views::split(std::string_view(*PFSPATH), ';'))
+    const std::regex env_var(R"(\$(\w+))");
+
+    for (const auto p : std::views::split(std::string_view(*PFSPATH), ':'))
     {
         std::string path;
-        std::regex env_var(R"(\$(\w+))");
         std::size_t pos = 0;
 
         for (std::cregex_iterator it(p.begin(), p.end(), env_var), end; it != end; ++it) {
