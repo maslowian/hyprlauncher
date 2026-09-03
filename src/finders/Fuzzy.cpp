@@ -12,79 +12,83 @@ using namespace Hyprutils::String;
 
 namespace {
 
-class CVarListView : public std::ranges::view_interface<CVarListView> {
-    std::string_view m_str;
-    char m_sep;
-
-public:
-    // (removeEmpty = true)
-    CVarListView(std::string_view str, char sep) : m_str(str), m_sep(sep) {}
-
-    class CIterator {
-    private:
+    class CVarListView : public std::ranges::view_interface<CVarListView> {
         std::string_view m_str;
-        std::size_t m_index = -1uz;
-        std::size_t m_count = 0;
-        char m_sep;
+        char             m_sep;
 
-    public:
-        using iterator_category = std::forward_iterator_tag;
-        using value_type = std::string_view;
-        using difference_type = std::ptrdiff_t;
-        using reference = value_type;
-        using pointer = value_type;
+      public:
+        // (removeEmpty = true)
+        CVarListView(std::string_view str, char sep) : m_str(str), m_sep(sep) {}
 
-        CIterator() = default;
-        CIterator(std::string_view str, char sep) : m_str(str), m_sep(sep) {
-            this->operator++();
+        class CIterator {
+          private:
+            std::string_view m_str;
+            std::size_t      m_index = -1uz;
+            std::size_t      m_count = 0;
+            char             m_sep;
+
+          public:
+            using iterator_category = std::forward_iterator_tag;
+            using value_type        = std::string_view;
+            using difference_type   = std::ptrdiff_t;
+            using reference         = value_type;
+            using pointer           = value_type;
+
+            CIterator() = default;
+            CIterator(std::string_view str, char sep) : m_str(str), m_sep(sep) {
+                this->operator++();
+            }
+
+            reference operator*() const {
+                return m_str.substr(m_index, m_count);
+            }
+
+            pointer operator->() const {
+                return this->operator*();
+            }
+
+            CIterator& operator++() {
+                m_index += m_count;
+                do {
+                    m_index += 1;
+                    if (m_index >= m_str.size()) {
+                        m_index = -1uz;
+                        return *this;
+                    }
+                } while (isSep(m_str[m_index]));
+
+                m_count = 1;
+
+                while (m_index + m_count < m_str.size() && !isSep(m_str[m_index + m_count]))
+                    m_count += 1;
+
+                return *this;
+            }
+
+            CIterator operator++(int) {
+                auto tmp = *this;
+                ++(*this);
+                return tmp;
+            }
+
+            bool isSep(char c) const {
+                return m_sep == ' ' ? std::isspace(c) : m_sep == '/' ? std::isspace(c) || c == m_sep : c == m_sep;
+            }
+
+            bool operator==(const CIterator& other) const {
+                return m_index == other.m_index;
+            }
+        };
+
+        using iterator = CIterator;
+
+        auto begin() const {
+            return CIterator(m_str, m_sep);
         }
-
-        reference operator*() const {
-            return m_str.substr(m_index, m_count);
-        }
-
-        pointer operator->() const {
-            return this->operator*();
-        }
-
-        CIterator& operator++() {
-            m_index += m_count;
-            do {
-                m_index += 1; 
-                if (m_index >= m_str.size()) {
-                    m_index = -1uz;
-                    return *this;
-                }
-            } while(isSep(m_str[m_index]));
-
-            m_count = 1;
-
-            while (m_index + m_count < m_str.size() && !isSep(m_str[m_index + m_count]))
-                m_count += 1;
-
-            return *this;
-        }
-
-        CIterator operator++(int) {
-            auto tmp = *this;
-            ++(*this);
-            return tmp;
-        }
-
-        bool isSep(char c) const {
-            return m_sep == ' ' ? std::isspace(c) : m_sep == '/' ? std::isspace(c) || c == m_sep : c == m_sep;
-        }
-
-        bool operator==(const CIterator& other) const {
-            return m_index == other.m_index;
+        auto end() const {
+            return CIterator();
         }
     };
-
-    using iterator = CIterator;
-
-    auto begin() const { return CIterator(m_str, m_sep); }
-    auto end() const { return CIterator(); }
-};
 
 }
 
@@ -97,9 +101,9 @@ static float jaroWinkler(const std::string_view& query, const std::string_view& 
 
     const auto MATCH_DISTANCE = LENGTH_A == 1 && LENGTH_B == 1 ? 0 : ((std::max(LENGTH_A, LENGTH_B) / 2) - 1);
 
-    bool* matchesA = (bool*)alloca(LENGTH_A * sizeof(bool));
-    bool* matchesB = (bool*)alloca(LENGTH_B * sizeof(bool));
-    size_t matches = 0;
+    bool*      matchesA = (bool*)alloca(LENGTH_A * sizeof(bool));
+    bool*      matchesB = (bool*)alloca(LENGTH_B * sizeof(bool));
+    size_t     matches  = 0;
     for (size_t i = 0; i < LENGTH_A; ++i) {
         const size_t start = (i > MATCH_DISTANCE ? i - MATCH_DISTANCE : 0);
         const size_t end   = std::min(i + MATCH_DISTANCE + 1, LENGTH_B);
@@ -193,7 +197,8 @@ static float tokenBestMatch(std::string_view qt, std::string_view lastQ, const C
     return (best - MIN_FUZZY_TO_COUNT) / (1.F - MIN_FUZZY_TO_COUNT);
 }
 
-static float scoreCandidate(const std::vector<std::string_view>& qTokens, std::string_view queryLowerTrim, const std::string& query, std::string_view cand, float freq, char tokenBreak) {
+static float scoreCandidate(const std::vector<std::string_view>& qTokens, std::string_view queryLowerTrim, const std::string& query, std::string_view cand, float freq,
+                            char tokenBreak) {
     const float popFactor = 1.F + (POPULARITY_FACTOR * std::log1p(std::max(0.F, freq)));
 
     // exact matches occupy a reserved band above any achievable fuzzy score, so a popular
@@ -209,17 +214,17 @@ static float scoreCandidate(const std::vector<std::string_view>& qTokens, std::s
     std::string_view lastQ = qTokens.back();
 
     // pick salient token as longest
-    std::string_view salient = qTokens[0];
-    float salientMatch = tokenBestMatch(qTokens[0], lastQ, cTok);
-    float sum      = 0.F + salientMatch;
-    float minMatch = std::min(1.F, salientMatch);
+    std::string_view salient      = qTokens[0];
+    float            salientMatch = tokenBestMatch(qTokens[0], lastQ, cTok);
+    float            sum          = 0.F + salientMatch;
+    float            minMatch     = std::min(1.F, salientMatch);
     for (auto qt : qTokens | std::views::drop(1)) {
         float match = tokenBestMatch(qt, lastQ, cTok);
         sum += match;
         minMatch = std::min(minMatch, match);
 
         if (qt.size() > salient.size()) {
-            salient = qt;
+            salient      = qt;
             salientMatch = match;
         }
     }
@@ -246,7 +251,8 @@ struct SScoreData {
     size_t            idx = 0;
 };
 
-static void workerFn(std::vector<SScoreData>& scores, const std::vector<SP<IFinderResult>>& in, const std::vector<std::string_view>& qTokens, const std::string& queryLowerTrim, const std::string& query, size_t start, size_t end, char tokenBreak) {
+static void workerFn(std::vector<SScoreData>& scores, const std::vector<SP<IFinderResult>>& in, const std::vector<std::string_view>& qTokens, const std::string& queryLowerTrim,
+                     const std::string& query, size_t start, size_t end, char tokenBreak) {
     for (size_t i = start; i < end; ++i) {
         auto& ref = scores[i];
 
@@ -296,7 +302,7 @@ std::vector<SP<IFinderResult>> Fuzzy::getNResults(const std::vector<SP<IFinderRe
     std::ranges::transform(queryLowerTrim, queryLowerTrim.begin(), ::tolower);
     queryLowerTrim = trim(queryLowerTrim);
 
-    auto qTokens = CVarListView(query, tokenBreak) | std::ranges::to<std::vector>();
+    auto                    qTokens = CVarListView(query, tokenBreak) | std::ranges::to<std::vector>();
 
     std::vector<SScoreData> scores;
     scores.resize(in.size());
@@ -318,7 +324,8 @@ std::vector<SP<IFinderResult>> Fuzzy::getNResults(const std::vector<SP<IFinderRe
                 workerThreads[i] = std::thread([&, begin = workElDone] { workerFn(scores, in, qTokens, queryLowerTrim, query, begin, in.size(), tokenBreak); });
                 break;
             }
-            workerThreads[i] = std::thread([&, begin = workElDone, end = workElDone + workElPerThread] { workerFn(scores, in, qTokens, queryLowerTrim, query, begin, end, tokenBreak); });
+            workerThreads[i] =
+                std::thread([&, begin = workElDone, end = workElDone + workElPerThread] { workerFn(scores, in, qTokens, queryLowerTrim, query, begin, end, tokenBreak); });
 
             workElDone += workElPerThread;
         }

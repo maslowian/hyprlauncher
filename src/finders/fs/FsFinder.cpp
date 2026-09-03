@@ -14,7 +14,6 @@
 #include <unistd.h>
 #include <sys/inotify.h>
 
-
 using namespace Hyprutils::String;
 using namespace Hyprutils::OS;
 
@@ -48,7 +47,7 @@ class CFsEntry : public IFinderResult {
     std::vector<std::string> m_fuzzables;
 
     uint32_t                 m_frequency = 0;
-    int m_wd;
+    int                      m_wd;
 };
 
 CFsFinder::CFsFinder() = default;
@@ -80,7 +79,7 @@ void CFsFinder::updateEntryCache() {
         for (std::byte* it = buffer; it < buffer + length; it += sizeof(inotify_event) + reinterpret_cast<inotify_event*>(it)->len) {
             auto* event = reinterpret_cast<inotify_event*>(it);
 
-            auto wd_it = m_wdMap.find(event->wd);
+            auto  wd_it = m_wdMap.find(event->wd);
             if (wd_it == m_wdMap.end())
                 continue;
 
@@ -98,7 +97,7 @@ void CFsFinder::updateEntryCache() {
 
 void CFsFinder::cacheEntry(const std::filesystem::path& path) {
     std::error_code ec;
-    const auto CAN = std::filesystem::canonical(path, ec);
+    const auto      CAN = std::filesystem::canonical(path, ec);
     if (ec)
         return;
 
@@ -107,16 +106,7 @@ void CFsFinder::cacheEntry(const std::filesystem::path& path) {
 
     int wd = -1;
     if (std::filesystem::is_directory(CAN) && m_fd != -1) {
-        wd = inotify_add_watch(
-            m_fd,
-            CAN.c_str(),
-            IN_CREATE |
-            IN_MOVED_TO |
-            IN_DELETE |
-            IN_MOVED_FROM |
-            IN_DELETE_SELF |
-            IN_MOVE_SELF
-        );
+        wd = inotify_add_watch(m_fd, CAN.c_str(), IN_CREATE | IN_MOVED_TO | IN_DELETE | IN_MOVED_FROM | IN_DELETE_SELF | IN_MOVE_SELF);
         if (wd == -1)
             Debug::log(ERR, "fs: failed to add watch descriptor for '{}': {}", CAN.c_str(), std::strerror(errno));
 
@@ -124,8 +114,7 @@ void CFsFinder::cacheEntry(const std::filesystem::path& path) {
             if (ec)
                 continue;
 
-            if (e.is_symlink())
-            {
+            if (e.is_symlink()) {
                 if (!m_allowSymlink)
                     continue;
                 auto target = std::filesystem::read_symlink(e, ec);
@@ -154,7 +143,7 @@ void CFsFinder::cacheEntry(const std::filesystem::path& path) {
 
 void CFsFinder::uncacheEntry(const std::filesystem::path& path) {
     std::error_code ec;
-    const auto CAN = std::filesystem::canonical(path, ec);
+    const auto      CAN = std::filesystem::canonical(path, ec);
     if (ec)
         return;
 
@@ -164,13 +153,12 @@ void CFsFinder::uncacheEntry(const std::filesystem::path& path) {
 
     const auto index = std::distance(m_fsEntryCache.begin(), std::ranges::find(m_fsEntryCache, it->second));
 
-    m_fsEntryCache[index] = std::move(m_fsEntryCache.back());
+    m_fsEntryCache[index]        = std::move(m_fsEntryCache.back());
     m_fsEntryCacheGeneric[index] = std::move(m_fsEntryCacheGeneric.back());
 
     m_fsEntryCache.pop_back();
     m_fsEntryCacheGeneric.pop_back();
-    if (it->second->m_wd != -1)
-    {
+    if (it->second->m_wd != -1) {
         if (inotify_rm_watch(m_fd, it->second->m_wd) == -1)
             Debug::log(ERR, "fs: failed to remove watch descriptor for '{}': {}", CAN.c_str(), std::strerror(errno));
         m_wdMap.erase(it->second->m_wd);
@@ -178,25 +166,22 @@ void CFsFinder::uncacheEntry(const std::filesystem::path& path) {
     m_fsEntryCacheMap.erase(it);
 }
 
-void CFsFinder::init() {
-}
+void CFsFinder::init() {}
 
 void CFsFinder::loadPath() {
-    if (m_fd == -1)
-    {
+    if (m_fd == -1) {
         m_fd = inotify_init1(IN_NONBLOCK);
         if (m_fd == -1)
             Debug::log(ERR, "fs: failed to create file descriptor: {}", std::strerror(errno));
     }
 
-    static auto PFSPATH = Hyprlang::CSimpleConfigValue<Hyprlang::STRING>(g_configManager->m_config.get(), "finders:fs_path");
+    static auto PFSPATH    = Hyprlang::CSimpleConfigValue<Hyprlang::STRING>(g_configManager->m_config.get(), "finders:fs_path");
     static auto PFSSYMLINK = Hyprlang::CSimpleConfigValue<Hyprlang::INT>(g_configManager->m_config.get(), "finders:fs_symlink");
-    m_allowSymlink = *PFSSYMLINK;
+    m_allowSymlink         = *PFSSYMLINK;
 
     const std::regex env_var(R"(\$(\w+))");
 
-    for (const auto p : std::views::split(std::string_view(*PFSPATH), ':'))
-    {
+    for (const auto p : std::views::split(std::string_view(*PFSPATH), ':')) {
         std::string path;
         std::size_t pos = 0;
 
@@ -222,7 +207,7 @@ std::vector<SFinderResult> CFsFinder::getResultsForQuery(const std::string& quer
         loadPath();
     updateEntryCache();
 
-    auto fuzzed = Fuzzy::getNResults(m_fsEntryCacheGeneric, query, MAX_RESULTS_PER_FINDER, '/');
+    auto                       fuzzed = Fuzzy::getNResults(m_fsEntryCacheGeneric, query, MAX_RESULTS_PER_FINDER, '/');
 
     std::vector<SFinderResult> results;
     results.reserve(fuzzed.size());
@@ -233,7 +218,7 @@ std::vector<SFinderResult> CFsFinder::getResultsForQuery(const std::string& quer
             continue;
         results.emplace_back(SFinderResult{
             .label   = p->m_path, // TODO: crop to left if gui is too smol
-            .icon    = "", // TODO: ext/dir icons
+            .icon    = "",        // TODO: ext/dir icons
             .result  = p,
             .hasIcon = false,
         });

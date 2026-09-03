@@ -19,10 +19,9 @@ class CFsFinder : public IFinder {
     std::vector<SP<CFsEntry>>                               m_fsEntryCache;
     std::vector<SP<IFinderResult>>                          m_fsEntryCacheGeneric;
     std::unordered_map<std::filesystem::path, SP<CFsEntry>> m_fsEntryCacheMap;
-    std::unordered_map<int,                   SP<CFsEntry>> m_wdMap;
+    std::unordered_map<int, SP<CFsEntry>>                   m_wdMap;
     int                                                     m_fd = -1;
     bool                                                    m_allowSymlink;
-
 
     void                                                    loadPath();
     void                                                    updateEntryCache();
