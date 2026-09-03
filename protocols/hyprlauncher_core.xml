@@ -56,8 +56,10 @@
 
     <c2s name="select_finder">
       <description summary="Select the launcher finder">
-            Select the launcher finder. Selecting finder will disable prefixes.
-            When launcher is closed, selected finder is reset.
+            Select the launcher finder, disabling prefixes.
+            If a finder is already selected, it will switch directly
+            to the new finder (it will preserve current search value).
+            Selected finder resets when the launcher is closed.
       </description>
       <arg name="finder" type="varchar" summary="finder name"/>
     </c2s>

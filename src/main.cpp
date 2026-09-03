@@ -140,8 +140,7 @@ int main(int argc, char** argv, char** envp) {
         Debug::log(TRACE, "Active instance already, opening launcher.");
         if (!explicitOptions.empty())
             socket->sendOpenWithOptions(explicitOptions);
-        else
-        {
+        else {
             if (selectedFinder.has_value())
                 socket->sendSelectFinder(selectedFinder.value());
             toggle ? socket->sendToggle() : socket->sendOpen();
@@ -172,9 +171,8 @@ int main(int argc, char** argv, char** envp) {
     if (!explicitOptions.empty()) {
         g_ipcFinder->setData(explicitOptions);
         g_queryProcessor->overrideQueryProvider(g_ipcFinder.get());
-    } else if (selectedFinder.has_value()) {
+    } else if (selectedFinder.has_value())
         g_queryProcessor->selectQueryProvider(selectedFinder.value());
-    }
 
     g_configManager = makeUnique<CConfigManager>();
     g_configManager->parse();
