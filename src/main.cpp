@@ -65,9 +65,9 @@ static const char* procLockErrorString(CProcLock::eProcLockObtainingError error)
 
 int main(int argc, char** argv, char** envp) {
 
-    bool                       openByDefault = true, dmenuMode = false, toggle = false;
-    std::vector<std::string>   explicitOptions;
-    std::optional<std::string> selectedFinder;
+    bool                     openByDefault = true, dmenuMode = false, toggle = false;
+    std::vector<std::string> explicitOptions;
+    std::string              selectedFinder = "";
 
     for (int i = 1; i < argc; ++i) {
         std::string_view sv{argv[i]};
@@ -141,8 +141,7 @@ int main(int argc, char** argv, char** envp) {
         if (!explicitOptions.empty())
             socket->sendOpenWithOptions(explicitOptions);
         else {
-            if (selectedFinder.has_value())
-                socket->sendSelectFinder(selectedFinder.value());
+            socket->sendSelectFinder(selectedFinder);
             toggle ? socket->sendToggle() : socket->sendOpen();
         }
         return 0;
@@ -171,8 +170,9 @@ int main(int argc, char** argv, char** envp) {
     if (!explicitOptions.empty()) {
         g_ipcFinder->setData(explicitOptions);
         g_queryProcessor->overrideQueryProvider(g_ipcFinder.get());
-    } else if (selectedFinder.has_value())
-        g_queryProcessor->selectQueryProvider(selectedFinder.value());
+    }
+
+    g_queryProcessor->selectQueryProvider(selectedFinder);
 
     g_configManager = makeUnique<CConfigManager>();
     g_configManager->parse();
